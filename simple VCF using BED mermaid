@@ -1,0 +1,76 @@
+flowchart TD
+    %% BAM Branch
+    A[Unsorted BAM File]
+    B[Sort BAM - samtools sort -@ THREADS]
+    C[Index Sorted BAM - samtools index]
+    D[Extract BAM Contig Names]
+    D1[Get first five contigs from BAM]
+    
+    %% FASTA Branch
+    E[Exhaustive Reference FASTA]
+    F[Reformat FASTA - seqtk seq -l60]
+    G[Check FASTA Header Naming]
+    H{Is FASTA naming\nconsistent with BAM?}
+    IH[Use reformatted FASTA as is]
+    IY[Auto-transform FASTA Headers\nAdd or Remove chr]
+    J[Transformed FASTA]
+    J1[Get first five contigs from FASTA]
+    
+    %% BED Branch (Optional)
+    M[Provided BED File Optional]
+    N[Extract BED Contig Names]
+    O[Check BED Naming vs BAM]
+    P{Is BED naming\nconsistent with BAM?}
+    PY[Use BED file as is]
+    PN[Auto-transform BED File\nAdd or Remove chr]
+    Q[Transformed BED File]
+    Q1[Get first five contigs from BED]
+    
+    %% Comparison Branch
+    X[Compare first five contigs from\nBAM, FASTA and BED]
+    Y{Are naming conventions\nconsistent across files?}
+    Z[Continue pipeline]
+    T[STOP - Inconsistent Naming\nManual Intervention Required]
+    
+    %% Continue Pipeline
+    K[Filter and Reorder FASTA\nUsing BAM Contig Names - seqkit grep]
+    L[Index Filtered FASTA - samtools faidx]
+    R[Run Variant Calling Pipeline\nbcftools mpileup + bcftools call]
+    S[Output VCF File]
+    
+    %% Connections
+    A --> B
+    B --> C
+    C --> D
+    D --> D1
+    
+    E --> F
+    F --> G
+    G --> H
+    H -- Yes --> IH
+    H -- No --> IY
+    IY --> J
+    IH --> J
+    J --> J1
+    
+    M --> N
+    N --> O
+    O --> P
+    P -- Yes --> PY
+    P -- No --> PN
+    PN --> Q
+    PY --> Q
+    Q --> Q1
+    
+    %% Merge Comparisons
+    D1 --> X
+    J1 --> X
+    Q1 --> X
+    X --> Y
+    Y -- Yes --> Z
+    Y -- No --> T
+    
+    Z --> K
+    K --> L
+    L --> R
+    R --> S
