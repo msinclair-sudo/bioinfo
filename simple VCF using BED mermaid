@@ -1,4 +1,11 @@
 flowchart TD
+    %% Nameing Conventions Check
+    [Read BAM contigs]
+    [BAM contigs are set as the expected workflow stardard]
+    [Save expected workflow naming convention to paramters json]
+    [Read Reference contigs, determine current naming convention]
+    [Read BED contigs determine current naming convention]
+    [Convert refernce and BED files to expected workflow standard]
     %% BAM Branch
     A[Unsorted BAM File]
     B[Sort BAM - samtools sort -@ THREADS]
