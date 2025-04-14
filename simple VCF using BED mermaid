@@ -1,83 +1,134 @@
 flowchart TD
-    %% Nameing Conventions Check
-    [Read BAM contigs]
-    [BAM contigs are set as the expected workflow stardard]
-    [Save expected workflow naming convention to paramters json]
-    [Read Reference contigs, determine current naming convention]
-    [Read BED contigs determine current naming convention]
-    [Convert refernce and BED files to expected workflow standard]
-    %% BAM Branch
-    A[Unsorted BAM File]
-    B[Sort BAM - samtools sort -@ THREADS]
-    C[Index Sorted BAM - samtools index]
-    D[Extract BAM Contig Names]
-    D1[Get first five contigs from BAM]
-    
-    %% FASTA Branch
-    E[Exhaustive Reference FASTA]
-    F[Reformat FASTA - seqtk seq -l60]
-    G[Check FASTA Header Naming]
-    H{Is FASTA naming\nconsistent with BAM?}
-    IH[Use reformatted FASTA as is]
-    IY[Auto-transform FASTA Headers\nAdd or Remove chr]
-    J[Transformed FASTA]
-    J1[Get first five contigs from FASTA]
-    
-    %% BED Branch (Optional)
-    M[Provided BED File Optional]
-    N[Extract BED Contig Names]
-    O[Check BED Naming vs BAM]
-    P{Is BED naming\nconsistent with BAM?}
-    PY[Use BED file as is]
-    PN[Auto-transform BED File\nAdd or Remove chr]
-    Q[Transformed BED File]
-    Q1[Get first five contigs from BED]
-    
-    %% Comparison Branch
-    X[Compare first five contigs from\nBAM, FASTA and BED]
-    Y{Are naming conventions\nconsistent across files?}
-    Z[Continue pipeline]
-    T[STOP - Inconsistent Naming\nManual Intervention Required]
-    
-    %% Continue Pipeline
-    K[Filter and Reorder FASTA\nUsing BAM Contig Names - seqkit grep]
-    L[Index Filtered FASTA - samtools faidx]
-    R[Run Variant Calling Pipeline\nbcftools mpileup + bcftools call]
-    S[Output VCF File]
-    
-    %% Connections
-    A --> B
-    B --> C
-    C --> D
-    D --> D1
-    
-    E --> F
-    F --> G
-    G --> H
-    H -- Yes --> IH
-    H -- No --> IY
-    IY --> J
-    IH --> J
-    J --> J1
-    
-    M --> N
-    N --> O
-    O --> P
-    P -- Yes --> PY
-    P -- No --> PN
-    PN --> Q
-    PY --> Q
-    Q --> Q1
-    
-    %% Merge Comparisons
-    D1 --> X
-    J1 --> X
-    Q1 --> X
-    X --> Y
-    Y -- Yes --> Z
-    Y -- No --> T
-    
-    Z --> K
-    K --> L
-    L --> R
-    R --> S
+ subgraph s1["Edit.Names"]
+        n6["RefSeq format"]
+        n5@{ label: "'chrN' format" }
+        n4@{ label: "'n' format" }
+        O["Return a vector of names in the expected format"]
+        n44["use an appropriate method of the file type to edit the chromsome/contig names"]
+        n45["a vector of the current names are suppied"]
+  end
+ subgraph HELPERS["Helper Functions"]
+        HP1["check_prefix: Verifies that each contig string matches the expected format and returns a Boolean"]
+        HP2["resume_state: Reads json log file to determine last successful checkpoint. and enters the workflow at the step"]
+        s1
+        n27["Check.Naming.Format: reads the five contigs/chromosomes provided and returns a boolean"]
+        n29["Test.File.Valid: checks that the file is not empty, and enters the workflow in the current run"]
+        n38["Check.Provided.Inputs:<br>the comand used to beguin the workflow will define th the inputs. e inputs. this is used to supply names to a cvalues to ajoson that are usd as envroment varavbiles.<br>these varabiles are then used to check that everything that is required exsists before starting to workflow"]
+  end
+    A["Start: Parse command-line arguments - BAM, FASTA, OUTVCF, optional BED, THREADS"] --> E["Initialize logging function"]
+    B["Check if output and intermediates directory exists"] -- No --> C["Create directory(s) if missing."]
+    C --> F["Start Pipeline"]
+    F --> n1["Determine if the script is being resumed"]
+    G["Step 1: Process BAM file"] --> I["Sort BAM file using samtools sort"]
+    I --> J["Index sorted BAM using samtools index"]
+    J --> K["Extract first 5 contigs from BAM header using sed"] & n15["Log Sucsessful Checkpoint to json"]
+    K --> L["Check.Naming.Format"]
+    M["Step 2: Process Reference FASTA"] --> P["Extract first 5 contig names from reformatted FASTA"]
+    P --> n26["Call Check.Naming.Format"]
+    V{"BED file provided?"} -- Yes --> X["Extract first 5 contig names from BED file"]
+    X --> Y["Call Check.Naming.Format"]
+    Y --> Z["Is the BED format consistent with the expected format?"]
+    Z -- No --> n23["Call Edit.Names"]
+    V -- No --> AC["Skip BED processing"]
+    AB["Seve final BED file"] --> AD["Step 4: Compare contig names across files"]
+    AD --> AE["Display BAM contigs, Reference FASTA contigs, and BED contigs if provided"]
+    AE --> n32["FASTA"] & n33["BAM"] & n34["BED"]
+    AH["Step 5: format reference Fasta"] --> n19["Log Sucessful Checkpoint to json"] & AJ["Extract full BAM contig list from sorted BAM header using samtools view and awk"]
+    AJ --> AK["Use seqkit grep with BAM contig list to create ordered FASTA"]
+    AK --> n36["Check.File.Vaild"]
+    AN["Index ordered FASTA using samtools faidx"] --> AO["Step 6: Variant calling"]
+    AO --> AP{"BED provided?"} & n20["Log Sucessful checkpoint to json"]
+    AP -- TRUE --> AQ["Run bcftools mpileup with --targets-file option and pipe output to bcftools call"]
+    AP -- FALSE --> AR["Run bcftools mpileup without BED option and pipe output to bcftools call"]
+    AQ --> AS["VCF file produced"]
+    AR --> AS
+    AS --> AT["Step 7: Cleanup intermediate files"]
+    AT --> AU["Remove intermediates directory"]
+    B -- Yes --> F
+    Z -- Yes --> n11["Test.File.Vaild"]
+    L --> n12["Log the expected format to json"] & M
+    n11 -- TRUE --> AB
+    n11 -- FALSE --> n18["Abort"]
+    AC --> AD
+    n22["call Edit.Names"] --> T["Check that transformed FASTA has valid contig names"]
+    n7["Supplied RefSeq to chromsome numbering mapping file"] --> n6
+    n13["Retrive expected format from log"] --> O & HP1 & n27
+    n1 -- No --> G
+    E --> n37["Check.Provided.Inputs"]
+    n28["Reads the Successful Checkpoint log file"] --> HP2
+    n30["Test.File.Vaild"] -- TRUE --> U["Save final processed FASTA as FASTA_PROCESSED"]
+    n30 -- FALSE --> n31["Abort"]
+    T --> n30
+    n23 --> n11
+    n32 --> n35["Check.Naming.Format"]
+    n33 --> n35
+    n34 --> n35
+    n35 -- FALSE --> AG["Abort"]
+    n35 -- TRUE --> AH
+    U --> n39["Log Sucsessful Checkpoint to json"] & n40["Step 3: BED file"]
+    n36 -- TRUE --> AN
+    n36 -- FALSE --> AM["Abort"]
+    n26 -- FALSE --> n22
+    n26 -- TRUE --> T
+    AU --> n21["Log Successful checkpoint to json"]
+    n21 --> AV["Exit"]
+    n37 --> B & n43["values logged to json"]
+    n40 --> V
+    n42["read json for bed provided"] --> AP
+    n41["read json for bed provided"] --> V
+    n1 -- Yes --> n24["resume_state"]
+    O --> n44
+    n45 --> O
+    n4 --> n45
+    n5 --> n45
+    n6 --> n45
+
+    n5@{ shape: rect}
+    n4@{ shape: rect}
+    n44@{ shape: rect}
+    n27@{ shape: rect}
+    n29@{ shape: rect}
+    n38@{ shape: rect}
+    L@{ shape: rect}
+    Z@{ shape: decision}
+    n11@{ shape: rect}
+    n28@{ shape: rect}
+    n30@{ shape: rect}
+    n39@{ shape: rect}
+    n42@{ shape: rect}
+    n24@{ shape: rect}
+     n15:::Peach
+     L:::ENV
+     n26:::ENV
+     Y:::ENV
+     n23:::ENV
+     n19:::Peach
+     n36:::ENV
+     n20:::Peach
+     n11:::ENV
+     n12:::Peach
+     n18:::Rose
+     n22:::ENV
+     n7:::ExternalFile
+     n13:::ENV
+     n13:::Peach
+     n37:::ENV
+     n28:::Peach
+     n30:::ENV
+     n31:::Rose
+     n35:::ENV
+     AG:::Rose
+     n39:::Peach
+     AM:::Rose
+     n21:::Peach
+     n43:::Peach
+     n42:::Peach
+     n41:::Peach
+     n24:::ENV
+    classDef ExternalFile stroke-width:4px, stroke-dasharray: 5, stroke:#00C853
+    classDef Rose stroke-width:1px, stroke-dasharray:none, stroke:#FF5978, fill:#FFDFE5, color:#8E2236
+    classDef ENV stroke-width:2px, stroke-dasharray: 2, stroke:#FF6D00
+    classDef Peach stroke-width:1px, stroke-dasharray:none, stroke:#FBB35A, fill:#FFEFDB, color:#8F632D
+    style s1 fill:#757575,stroke:#AA00FF
+
+
